@@ -4,6 +4,7 @@ import '../widgets/camera_inference_content.dart';
 import '../widgets/camera_inference_overlay.dart';
 import '../widgets/camera_controls.dart';
 import '../widgets/threshold_slider.dart';
+import '../widgets/gradient_bar.dart';
 
 class CameraInferenceScreen extends StatefulWidget {
   const CameraInferenceScreen({super.key});
@@ -62,6 +63,9 @@ class _CameraInferenceScreenState extends State<CameraInferenceScreen> {
                 iouThreshold: _controller.iouThreshold,
                 numItemsThreshold: _controller.numItemsThreshold,
                 onValueChanged: _controller.updateSliderValue,
+                isLandscape: isLandscape,
+              ),
+              RipenessScaleOverlay(
                 isLandscape: isLandscape,
               ),
             ],

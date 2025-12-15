@@ -115,10 +115,15 @@ class CameraInferenceController extends ChangeNotifier {
   void toggleSlider(SliderType type) {
     if (_isDisposed) return;
 
-    if (_activeSlider != type) {
-      _activeSlider = _activeSlider == type ? SliderType.none : type;
-      notifyListeners();
+    // If the tapped slider is already active, close it (set to none).
+    // Otherwise, open the new slider.
+    if (_activeSlider == type) {
+      _activeSlider = SliderType.none;
+    } else {
+      _activeSlider = type;
     }
+
+    notifyListeners();
   }
 
   void updateSliderValue(double value) {

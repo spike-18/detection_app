@@ -4,7 +4,6 @@ import 'detection_stats_display.dart';
 import 'threshold_pill.dart';
 import '../../models/models.dart';
 
-/// Top overlay widget containing model selector, stats, and threshold pills
 class CameraInferenceOverlay extends StatelessWidget {
   const CameraInferenceOverlay({
     super.key,
@@ -17,30 +16,36 @@ class CameraInferenceOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      top: MediaQuery.of(context).padding.top + (isLandscape ? 8 : 16),
-      left: isLandscape ? 8 : 16,
-      right: isLandscape ? 8 : 16,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(height: isLandscape ? 8 : 12),
-          DetectionStatsDisplay(
-            detectionCount: controller.detectionCount,
-            currentFps: controller.currentFps,
+    return Stack(
+      children: [
+        // 1. Existing Top UI (Stats & Pills)
+        Positioned(
+          top: MediaQuery.of(context).padding.top + (isLandscape ? 8 : 16),
+          left: isLandscape ? 8 : 16,
+          right: isLandscape ? 8 : 16,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(height: isLandscape ? 8 : 12),
+              DetectionStatsDisplay(
+                detectionCount: controller.detectionCount,
+                currentFps: controller.currentFps,
+              ),
+              const SizedBox(height: 8),
+              _buildThresholdPills(),
+            ],
           ),
-          const SizedBox(height: 8),
-          _buildThresholdPills(),
-        ],
-      ),
+        ),
+      ],
     );
   }
+
 
   Widget _buildThresholdPills() {
     if (controller.activeSlider == SliderType.confidence) {
       return ThresholdPill(
         label:
-            'CONFIDENCE THRESHOLD: ${controller.confidenceThreshold.toStringAsFixed(2)}',
+        'CONFIDENCE THRESHOLD: ${controller.confidenceThreshold.toStringAsFixed(2)}',
       );
     } else if (controller.activeSlider == SliderType.iou) {
       return ThresholdPill(
