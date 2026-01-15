@@ -32,6 +32,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
 import android.content.res.Configuration
 
+
 class YOLOView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
@@ -774,6 +775,12 @@ class YOLOView @JvmOverloads constructor(
                 mappedHeight = boxRect.height()
             }
 
+            // crop box in the middle of the box
+            mappedLeft += mappedWidth / 2
+            mappedTop += mappedHeight / 2
+            mappedWidth /= 2
+            mappedHeight /= 2
+
             // 2. Physical Clamping (The "Safe" Step)
             // Now that we have mapped coordinates, we clamp them strictly to the bitmap dimensions.
             val pX = mappedLeft.toInt().coerceIn(0, iw - 1)
@@ -795,7 +802,7 @@ class YOLOView @JvmOverloads constructor(
             }
 
             // 4. Calculate Median (Standard Logic)
-            val step = 10 // Step 10 is sufficient for color estimation and faster than 5
+            val step = 2 // Step 10 is sufficient for color estimation and faster than 5
             var count = 0
 
             // Optimize array size allocation
@@ -894,86 +901,130 @@ class YOLOView @JvmOverloads constructor(
                         Log.d(TAG, "Box pixel coords: (${firstBox.xywh.left}, ${firstBox.xywh.top}, ${firstBox.xywh.right}, ${firstBox.xywh.bottom})")
                     }
 
-                    for (box in result.boxes) {
+                    // 1. Setup Bitmap Dimensions
+                    val iw = result.originalImage?.width ?: 1
+                    val ih = result.originalImage?.height ?: 1
+
+                    // 2. Pre-calculate ALL boxes in "Bitmap Space"
+                    // We need this consistent list for 'removeOverlapping' to work correctly.
+                    val bitmapRects = result.boxes.map { box ->
+                        // Create the rect in screen/detection coordinates
+                        val screenRect = box.xywh // or box.xyxy depending on your object, assuming left/top/right/bottom available
+
+                        if (!isLandscape) {
+                            // --- PORTRAIT MAPPING (Fix based on your old code) ---
+                            // Formula: NewX = OldY, NewY = BitmapHeight - OldX - OldWidth
+                            // Screen Left/Top/Right/Bottom -> Bitmap Coordinates
+
+                            val mappedLeft = screenRect.top
+                            // We use 'right' because it corresponds to the distance from the new origin
+                            val mappedTop = ih - screenRect.right
+                            val mappedWidth = screenRect.height()
+                            val mappedHeight = screenRect.width()
+
+                            Rect(
+                                mappedLeft.toInt(),
+                                mappedTop.toInt(),
+                                (mappedLeft + mappedWidth).toInt(),
+                                (mappedTop + mappedHeight).toInt()
+                            )
+                        } else {
+                            // --- LANDSCAPE MAPPING (Direct) ---
+                            Rect(
+                                screenRect.left.toInt(),
+                                screenRect.top.toInt(),
+                                screenRect.right.toInt(),
+                                screenRect.bottom.toInt()
+                            )
+                        }
+                    }
+
+
+                    // 3. Main Loop
+                    for ((index, box) in result.boxes.withIndex()) {
+
+                        var calculatedColorInt = Color.YELLOW // Default fallback
+
+                        // --- PART A: IMAGE PROCESSING (Uses Bitmap Coordinates) ---
+                        if (result.originalImage != null) {
+                            try {
+                                // Use the pre-calculated transformed rect
+                                val boxRectInBitmap = bitmapRects[index]
+
+                                // Safety Clamp: Ensure we don't crash by cropping outside the bitmap
+                                val safeRect = Rect(boxRectInBitmap)
+                                if (safeRect.intersect(0, 0, iw, ih) && safeRect.width() > 0 && safeRect.height() > 0) {
+
+                                    // 1. Crop (Now using correct Bitmap coordinates)
+                                    val crop = Bitmap.createBitmap(
+                                        result.originalImage,
+                                        safeRect.left,
+                                        safeRect.top,
+                                        safeRect.width(),
+                                        safeRect.height()
+                                    )
+
+                                    // 2. Remove Overlapping
+                                    // IMPORTANT: Pass 'bitmapRects' so overlaps are calculated in the same coordinate space!
+                                    val cleanCrop = removeOverlapping(crop, boxRectInBitmap, bitmapRects)
+
+                                    // 3. Get Color & Normalize
+                                    val rgbArray = getTomatoColor(cleanCrop)
+                                    val rawColor = Color.rgb(rgbArray[0], rgbArray[1], rgbArray[2])
+                                    val normalizedList = normalizeBrightness(listOf(rawColor), 200)
+                                    calculatedColorInt = normalizedList[0]
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Color calc failed for box $index", e)
+                            }
+                        }
+
+                        // --- PART B: DRAWING LOGIC (Uses Screen Coordinates) ---
+                        // This part remains unchanged as it was already correct for the overlay
+
                         val alpha = (box.conf * 255).toInt().coerceIn(0, 255)
-
-                        // [MODIFIED] Calculate Median Color
-                        // If originalImage is available, calculate median. Otherwise fallback to class color.
-                        val medianRGB = result.originalImage?.let { bitmap ->
-                            calculateMedianColor(bitmap, box.xywh, isLandscape) // xywh represents the box rect on the original image
-                        } ?: ultralyticsColors[box.index % ultralyticsColors.size]
-
-                        // Apply the median color with the confidence alpha
                         val newColor = Color.argb(
                             alpha,
-                            Color.red(medianRGB),
-                            Color.green(medianRGB),
-                            Color.blue(medianRGB)
+                            Color.red(calculatedColorInt),
+                            Color.green(calculatedColorInt),
+                            Color.blue(calculatedColorInt)
                         )
 
-                        // Use same coordinate calculation for all orientations
+                        // Calculate drawing coordinates (Standard Logic)
                         var left = box.xywh.left * scale + dx
                         var top = box.xywh.top * scale + dy
                         var right = box.xywh.right * scale + dx
                         var bottom = box.xywh.bottom * scale + dy
 
+                        // [Your existing Landscape/Reverse/FrontCamera logic here...]
                         if (isReverseLandscape) {
-                            // Formula to rotate 180° around the center of the View (vw, vh):
-                            // NewX = ViewWidth - OldX
-                            // NewY = ViewHeight - OldY
-
-                            // We must swap Left/Right and Top/Bottom because "Left" becomes "Right" after flipping.
                             val flippedLeft = vw - right
                             val flippedRight = vw - left
                             val flippedTop = vh - bottom
                             val flippedBottom = vh - top
-
-                            left = flippedLeft
-                            right = flippedRight
-                            top = flippedTop
-                            bottom = flippedBottom
+                            left = flippedLeft; right = flippedRight; top = flippedTop; bottom = flippedBottom
                         }
 
-                        // Ensure coordinates are within view bounds and maintain aspect ratio
                         val boxWidth = right - left
                         val boxHeight = bottom - top
-                        
-                        // Adjust coordinates to maintain aspect ratio and stay within bounds
-                        if (left < 0) {
-                            left = 0f
-                            right = left + boxWidth
-                        }
-                        if (right > vw) {
-                            right = vw.toFloat()
-                            left = right - boxWidth
-                        }
-                        if (top < 0) {
-                            top = 0f
-                            bottom = top + boxHeight
-                        }
-                        if (bottom > vh) {
-                            bottom = vh.toFloat()
-                            top = bottom - boxHeight
-                        }
-                        
-                        // Flip horizontally for front camera (DETECT task)
+
+                        // Boundary checks...
+                        if (left < 0) { left = 0f; right = left + boxWidth }
+                        if (right > vw) { right = vw.toFloat(); left = right - boxWidth }
+                        if (top < 0) { top = 0f; bottom = top + boxHeight }
+                        if (bottom > vh) { bottom = vh.toFloat(); top = bottom - boxHeight }
+
                         if (isFrontCamera) {
                             val flippedLeft = vw - right
                             val flippedRight = vw - left
-                            left = flippedLeft
-                            right = flippedRight
+                            left = flippedLeft; right = flippedRight
                         }
-                        
-                        Log.d(TAG, "Drawing box for ${box.cls}: L=$left, T=$top, R=$right, B=$bottom, conf=${box.conf}")
 
+                        // Draw Box
                         paint.color = newColor
                         paint.style = Paint.Style.STROKE
                         paint.strokeWidth = BOX_LINE_WIDTH
-                        canvas.drawRoundRect(
-                            left, top, right, bottom,
-                            BOX_CORNER_RADIUS, BOX_CORNER_RADIUS,
-                            paint
-                        )
+                        canvas.drawRoundRect(left, top, right, bottom, BOX_CORNER_RADIUS, BOX_CORNER_RADIUS, paint)
 
                         // Label text
                         val labelText = "${box.cls} ${"%.1f".format(box.conf * 100)}%"
@@ -983,9 +1034,8 @@ class YOLOView @JvmOverloads constructor(
                         val textHeight = fm.bottom - fm.top
                         val pad = 8f
 
-                        // Label background height is (text height + 2*padding)
+                        // Label background height
                         val labelBoxHeight = textHeight + 2 * pad
-                        // Place label on top of the box's upper edge
                         var labelBottom = top
                         var labelTop = labelBottom - labelBoxHeight
 
@@ -1007,9 +1057,7 @@ class YOLOView @JvmOverloads constructor(
 
                         // Center text vertically within the rectangle
                         paint.color = Color.WHITE
-                        // Center position = (bgRect.top + bgRect.bottom)/2
                         val centerY = (bgRect.top + bgRect.bottom) / 2
-                        // Baseline = centerY - (fm.descent + fm.ascent)/2
                         val baseline = centerY - (fm.descent + fm.ascent) / 2
                         canvas.drawText(labelText, bgRect.left + pad, baseline, paint)
                     }
