@@ -65,9 +65,9 @@ class _CameraInferenceScreenState extends State<CameraInferenceScreen> {
                 onValueChanged: _controller.updateSliderValue,
                 isLandscape: isLandscape,
               ),
-              RipenessScaleOverlay(
-                isLandscape: isLandscape,
-              ),
+              // RipenessScaleOverlay(
+              //   isLandscape: isLandscape,
+              // ),
             ],
           );
         },

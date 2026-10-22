@@ -111,7 +111,8 @@ fun getTomatoColor(bitmap: Bitmap): IntArray {
     // 2. Apply Heuristic Logic
     // Python: if others >= 0.1 * greens -> Keep ONLY others (ratio < 0.5)
     // Else -> Keep EVERYTHING (do not filter)
-    val useOnlyOthers = otherCount >= 0.1 * greenCount
+//    val useOnlyOthers = otherCount >= 0.1 * greenCount
+    val useOnlyOthers = false
 
     val finalReds = ArrayList<Int>()
     val finalGreens = ArrayList<Int>()
